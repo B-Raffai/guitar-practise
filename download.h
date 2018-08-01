@@ -4,8 +4,8 @@ typedef struct download{
     GtkWidget *grid;
     GtkWidget *button;
     GtkWidget *textbox;
-    GtkWidget *download_status_view;
+    GtkWidget *download_status_term;
 } download_t;
 
-void download_song(const char *name, GtkTextBuffer *buff);
+void download_song(const char *name, GtkWidget *term);
 download_t *download_new(void);

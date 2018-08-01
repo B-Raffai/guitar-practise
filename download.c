@@ -1,17 +1,12 @@
 #include <gtk/gtk.h>
+#include <vte/vte.h>
 #include "download.h"
-
-typedef struct add_text_args {
-    GtkTextBuffer *buff;
-    gint fd;
-} add_text_args;
 
 static void download_cb (download_t *dl) {
     g_message("downloading: %s\n", gtk_entry_get_text(
                 GTK_ENTRY(dl->textbox)));
     download_song(gtk_entry_get_text(GTK_ENTRY(dl->textbox)), 
-                  gtk_text_view_get_buffer(
-                      GTK_TEXT_VIEW(dl->download_status_view)));
+                      dl->download_status_term);
 }
 
 download_t* download_new() {
@@ -34,8 +29,8 @@ download_t* download_new() {
     download->button = gtk_button_new_with_label("download");
     gtk_grid_attach( GTK_GRID(download->grid), download->button, 1, 0, 1, 1);
 
-    download->download_status_view = gtk_text_view_new();
-    gtk_grid_attach( GTK_GRID(download->grid), download->download_status_view,
+    download->download_status_term = vte_terminal_new();
+    gtk_grid_attach( GTK_GRID(download->grid), download->download_status_term,
              0, 1, 2, 1);
 
     gtk_widget_show_all(download->window);
@@ -44,13 +39,18 @@ download_t* download_new() {
             G_CALLBACK (download_cb), (gpointer)download);
 }
 
-gboolean add_text_to_buffer(GIOChannel *src, GIOCondition cond, gpointer data) {
+gboolean add_text_to_term(GIOChannel *src, GIOCondition cond, gpointer term) {
     char c;
-    GtkTextBuffer *buff = (GtkTextBuffer *)data;
-
     if(cond == G_IO_IN) {
         g_io_channel_read_chars(src, &c, 1, NULL, NULL);
-        gtk_text_buffer_insert_at_cursor(buff, &c, 1);
+
+        //add carriage return before line feed
+        if(c == '\n') {
+            char cr = '\r';
+            vte_terminal_feed(term, &cr, 1);
+        }
+
+        vte_terminal_feed(term, &c, 1);
         return TRUE;
     } else {
         g_critical("Wrong condition in add_text_to_buffer");
@@ -58,7 +58,7 @@ gboolean add_text_to_buffer(GIOChannel *src, GIOCondition cond, gpointer data) {
     }
 }
 
-void download_song(const char *name, GtkTextBuffer *buff) {
+void download_song(const char *name, GtkWidget *term) {
     char lastarg[100];
     gchar *argv[] = {"/usr/bin/youtube-dl", "-x", NULL, NULL};
 
@@ -68,7 +68,6 @@ void download_song(const char *name, GtkTextBuffer *buff) {
     GPid pid;
     gint chl_std_out;
     GIOChannel *io;
-    add_text_args args;
     
     gboolean ret;
     GError *err = NULL;
@@ -90,6 +89,6 @@ void download_song(const char *name, GtkTextBuffer *buff) {
 
     io = g_io_channel_unix_new(chl_std_out);
 
-    //when there is new data in the pipe, put it into the buffer
-    g_io_add_watch(io, G_IO_IN, add_text_to_buffer, (gpointer)buff);
+    //when there is new data in the pipe, add it to the terminal
+    g_io_add_watch(io, G_IO_IN, add_text_to_term, (gpointer)term);
 }
